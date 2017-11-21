@@ -359,7 +359,7 @@ def test(model):
         # view_as后是30x1
         # 得到一个batch中正确的数量
         correct += pred.eq(label.view_as(pred)).cpu().sum()
-        if batch_idx == test_batch_num:
+        if batch_idx == (test_batch_num-1):
             break
     print "correct_rate:", (correct + 0.0) / (batch_size * test_batch_num)
 
