@@ -15,40 +15,33 @@ data_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.1307,), (0.3081,))
 ])
-
 train_loader = torch.utils.data.DataLoader(datasets.MNIST('mnist', train=True, download=True, transform=data_transform),
                                            batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(datasets.MNIST('mnist', train=False, download=True, transform=data_transform),
                                           batch_size=batch_size, shuffle=True)
-
-
 class CapsNet(nn.Module):
-    global batch_size
 
+    global batch_size
     def __init__(self):
         super(CapsNet, self).__init__()
-        # self.dataloader = dataloader
-
         self.build()
 
     def build(self):
-        # 1：灰度图通道 256: 第一层卷积通道 9: 9x9卷积核 1: 步长1
+        # 第一层卷积（1：灰度图通道 256: 第一层卷积通道 9: 9x9卷积核 1: 步长1）
         conv1 = nn.Conv2d(in_channels=1,
                           out_channels=256,
                           kernel_size=9,
                           stride=1)
         relu1 = nn.ReLU(inplace=True)
-
         # primarycaps层
         primarycaps = PrimaryCaps()
-
-        # route层
-        # 6x6x32个8D-capsule路由到10个16D-capsule
+        # route层 (6x6x32个8D-capsule路由到10个16D-capsule)
         route1 = Route(in_caps_num=6 * 6 * 32,
                        in_caps_dim=8,
                        out_caps_num=10,
                        out_caps_dim=16,
                        batch_size=batch_size)
+        # 重构解码
         self.Decoder = Decoder()
 
         # Use GPU if available
@@ -69,7 +62,6 @@ class CapsNet(nn.Module):
         # target`: [batch_size, 10]
         # l: Scalar, lambda for down-weighing the loss for absent digit classes
         # L_c = T_c * max(0, m_plus - norm(v_c)) ^ 2 + lambda * (1 - T_c) * max(0, norm(v_c) - m_minus) ^2
-
         batch_size = v.size(0)
         square = v ** 2
         square_sum = torch.sum(square, dim=2)
@@ -94,7 +86,6 @@ class CapsNet(nn.Module):
     def reconstruction_loss(self, reconstruction, image):
         # reconstruction: [batch_size, 784] Decoder outputs of images
         # image: [batch_size, 1, 28, 28] MNIST samples
-
         batch_size = image.size(0)
         # image: [batch_size, 784]
         image = image.view(batch_size, -1)
@@ -109,7 +100,6 @@ class CapsNet(nn.Module):
         batch_size = image.size(0)
 
         marginal_loss = self.marginal_loss(v, target)
-
         # Get reconstructions from the decoder network
         reconstruction = self.Decoder(v, target)
         reconstruction_loss = self.reconstruction_loss(reconstruction, image)
@@ -124,7 +114,6 @@ class PrimaryCaps(nn.Module):
     """
     从第一层卷积再作一层，然后形成capsule分组
     """
-
     def __init__(self):
         super(PrimaryCaps, self).__init__()
         # 应该是32
@@ -182,8 +171,6 @@ class PrimaryCaps(nn.Module):
                           out_channels=8,
                           kernel_size=9,
                           stride=2)
-        # relu = nn.ReLU(inplace = True)
-        # net = nn.Sequential(conv1, relu)
         # Use GPU if available
         if torch.cuda.is_available():
             conv1 = conv1.cuda()
@@ -200,7 +187,6 @@ class Route(nn.Module):
         self.out_caps_num = out_caps_num
         self.out_caps_dim = out_caps_dim
         self.batch_size = batch_size
-
         # batch共享一份权重
         # [1152, 10, 16, 8]
         self.W = nn.Parameter(torch.randn(in_caps_num, out_caps_num, out_caps_dim, in_caps_dim))
@@ -339,9 +325,9 @@ def to_one_hot(x, length):
 
 
 def test(model):
+    test_batch_num = 4
     correct = 0
 
-    model.eval()
     # 测试方案：仅仅取一批数据，测试计算正确率
     for batch_idx, (data, target) in enumerate(test_loader):
         # Store the indices for calculating accuracy
@@ -373,10 +359,9 @@ def test(model):
         # view_as后是30x1
         # 得到一个batch中正确的数量
         correct += pred.eq(label.view_as(pred)).cpu().sum()
-        break
-        # if batch_idx > 5:
-        #    break
-    print (correct + 0.0) / batch_size
+        if batch_idx == test_batch_num:
+            break
+    print "correct_rate:", (correct + 0.0) / (batch_size * test_batch_num)
 
 
 def adjust_learning_rate(optimizer, loss):
