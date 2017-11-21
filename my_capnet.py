@@ -5,9 +5,11 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 import torch.optim as optim
+from torch.optim import lr_scheduler
 import os
-#目前最好30，rl：0.0015
-batch_size = 64
+
+# 目前最好30，rl：0.0015
+batch_size = 30
 
 data_transform = transforms.Compose([
     transforms.ToTensor(),
@@ -67,7 +69,7 @@ class CapsNet(nn.Module):
         # target`: [batch_size, 10]
         # l: Scalar, lambda for down-weighing the loss for absent digit classes
         # L_c = T_c * max(0, m_plus - norm(v_c)) ^ 2 + lambda * (1 - T_c) * max(0, norm(v_c) - m_minus) ^2
-        
+
         batch_size = v.size(0)
         square = v ** 2
         square_sum = torch.sum(square, dim=2)
@@ -92,7 +94,7 @@ class CapsNet(nn.Module):
     def reconstruction_loss(self, reconstruction, image):
         # reconstruction: [batch_size, 784] Decoder outputs of images
         # image: [batch_size, 1, 28, 28] MNIST samples
-        
+
         batch_size = image.size(0)
         # image: [batch_size, 784]
         image = image.view(batch_size, -1)
@@ -187,6 +189,7 @@ class PrimaryCaps(nn.Module):
             conv1 = conv1.cuda()
 
         return conv1
+
 
 class Route(nn.Module):
     def __init__(self, in_caps_num, in_caps_dim,
@@ -291,8 +294,8 @@ class Route(nn.Module):
         # print "route_out:", v
         return v
 
-class Decoder(nn.Module):
 
+class Decoder(nn.Module):
     def __init__(self):
         '''
         The decoder network consists of 3 fully connected layers, with
@@ -325,6 +328,7 @@ class Decoder(nn.Module):
         reconstruction = F.sigmoid(self.fc3(v))
 
         return reconstruction
+
 
 def to_one_hot(x, length):
     batch_size = x.size(0)
@@ -361,7 +365,7 @@ def test(model):
         # norms: [batch_size, 10]
         # 计算向量长
         norms = torch.sqrt(torch.sum(output ** 2, dim=2))
-        
+
         # pred: [batch_size]
         # 取最大,[1]取到了位置（30x1的格式）
         pred = norms.data.max(1, keepdim=True)[1].type(torch.LongTensor)
@@ -372,47 +376,54 @@ def test(model):
         break
         # if batch_idx > 5:
         #    break
-    print (correct+0.0) / batch_size
+    print (correct + 0.0) / batch_size
+
+
 def adjust_learning_rate(optimizer, loss):
     '''
     调整学习率
     '''
     global step
-    if step==0:
-        if loss<2:
+    if step == 0:
+        if loss < 2:
             step += 1
-            print "【adjust rl to",optimizer.param_groups[0]['lr']*0.1,"】"
+            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
             for param_group in optimizer.param_groups:
                 param_group['lr'] = param_group['lr'] * 0.1
-    elif step==1:
-        if loss<1:
+    elif step == 1:
+        if loss < 1:
             step += 1
-            print "【adjust rl to",optimizer.param_groups[0]['lr']*0.1,"】"
+            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
             for param_group in optimizer.param_groups:
                 param_group['lr'] = param_group['lr'] * 0.1
-    elif step==2:
-        if loss<0.6:
+    elif step == 2:
+        if loss < 0.6:
             step += 1
-            print "【adjust rl to",optimizer.param_groups[0]['lr']*0.1,"】"
+            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
             for param_group in optimizer.param_groups:
                 param_group['lr'] = param_group['lr'] * 0.03
-    elif step==3:
-        if loss<0.3:
+    elif step == 3:
+        if loss < 0.3:
             step += 1
-            print "【adjust rl to",optimizer.param_groups[0]['lr']*0.07,"】"
+            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.07, "】"
             for param_group in optimizer.param_groups:
                 param_group['lr'] = param_group['lr'] * 0.07
     else:
         pass
-        
+
+
 if __name__ == '__main__':
     step = 0
     net = CapsNet()
     net.cuda()
     print(net)
-    optimizer = optim.Adam(net.parameters(), lr = 0.02)
+    optimizer = optim.Adam(net.parameters(), lr=0.0015)
+    scheduler = lr_scheduler.ExponentialLR(optimizer, 0.5)
     need_adj = True
     for epoch in range(30):
+        # Update learning rate
+        scheduler.step()
+        print('Learning rate: {}'.format(scheduler.get_lr()[0]))
         for batch_idx, (data, target) in enumerate(train_loader, 0):
             target_onehot = to_one_hot(target, 10)
             data, target = Variable(data).cuda(), Variable(target_onehot).cuda()
@@ -428,7 +439,7 @@ if __name__ == '__main__':
             if batch_idx % 20 == 0 and batch_idx != 0:
                 # print "!!!out put:", output
                 print "loss", loss.data[0], "r_loss", r_loss.data[0]
-                adjust_learning_rate(optimizer, loss.data[0])
+                # adjust_learning_rate(optimizer, loss.data[0])
             if batch_idx % 50 == 0 and batch_idx != 0 and loss.data[0] < 1.0:
                 print "test begin"
                 test(net)
