@@ -19,9 +19,11 @@ train_loader = torch.utils.data.DataLoader(datasets.MNIST('mnist', train=True, d
                                            batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(datasets.MNIST('mnist', train=False, download=True, transform=data_transform),
                                           batch_size=batch_size, shuffle=True)
-class CapsNet(nn.Module):
 
+
+class CapsNet(nn.Module):
     global batch_size
+
     def __init__(self):
         super(CapsNet, self).__init__()
         self.build()
@@ -34,7 +36,11 @@ class CapsNet(nn.Module):
                           stride=1)
         relu1 = nn.ReLU(inplace=True)
         # primarycaps层
-        primarycaps = PrimaryCaps()
+        primarycaps = PrimaryCaps(in_channels=256,
+                                  kernel_size=9,
+                                  stride=2,
+                                  out_caps_group=32,
+                                  out_caps_dim=8)
         # route层 (6x6x32个8D-capsule路由到10个16D-capsule)
         route1 = Route(in_caps_num=6 * 6 * 32,
                        in_caps_dim=8,
@@ -114,18 +120,24 @@ class PrimaryCaps(nn.Module):
     """
     从第一层卷积再作一层，然后形成capsule分组
     """
-    def __init__(self):
+
+    def __init__(self, in_channels, kernel_size, stride, out_caps_group, out_caps_dim):
         super(PrimaryCaps, self).__init__()
+        self.in_channels = in_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.out_caps_group = out_caps_group
+        self.out_caps_dim = out_caps_dim
+
         # 应该是32
-        self.cells = [self.create_cell_fn() for i in range(32)]
-        self.caps_num = len(self.cells)
+        self.cells = [self.create_cell_fn() for i in range(out_caps_group)]
 
     def forward(self, input):
         # 输入为[batch, 256, 20, 20]
         # 输出[batch, 1152, 8]
 
         # 模拟32组(每组6x6)个capsule
-        u = [self.cells[i](input) for i in range(self.caps_num)]  # 32
+        u = [self.cells[i](input) for i in range(self.out_caps_group)]  # 32
 
         # list，多出一维。
         # u:[batch, 8, 6, 6] -> [batch, 8, 32, 6, 6]
@@ -134,7 +146,6 @@ class PrimaryCaps(nn.Module):
         # 方便作所有向量的长度计算，后续squash使用
         # u: [batch, 8, 32, 6, 6] -> [batch, 8, 1152]
         u = u.view(u.size(0), u.size(1), -1)
-
         # u: [batch, 8, 1152] -> [batch, 1152, 8]
         u = u.transpose(1, 2)
 
@@ -167,10 +178,10 @@ class PrimaryCaps(nn.Module):
         create sub-network inside a capsule.
         :return:
         """
-        conv1 = nn.Conv2d(in_channels=256,
-                          out_channels=8,
-                          kernel_size=9,
-                          stride=2)
+        conv1 = nn.Conv2d(in_channels=self.in_channels,
+                          out_channels=self.out_caps_dim,
+                          kernel_size=self.kernel_size,
+                          stride=self.stride)
         # Use GPU if available
         if torch.cuda.is_available():
             conv1 = conv1.cuda()
@@ -237,7 +248,8 @@ class Route(nn.Module):
 
         # 矩阵相乘
         # u_hat: [batch_size, 1152, 10, 16]
-        # [100, 1152, 10, 16, 8] [100, 288, 10, 32, 1]
+        # [100, 1152, 10, 16, 8] [batch_size, 1152, 10, 8, 1]
+        # print "W_batch:", W_batch.size(), "u_stack:", u_stack.size()
         u_hat = torch.matmul(W_batch, u_stack).squeeze()
         # print "uhat:", u_hat
 
@@ -325,7 +337,7 @@ def to_one_hot(x, length):
 
 
 def test(model):
-    test_batch_num = 4
+    test_batch_num = 10
     correct = 0
 
     # 测试方案：仅仅取一批数据，测试计算正确率
@@ -359,9 +371,9 @@ def test(model):
         # view_as后是30x1
         # 得到一个batch中正确的数量
         correct += pred.eq(label.view_as(pred)).cpu().sum()
-        if batch_idx == (test_batch_num-1):
+        if batch_idx == (test_batch_num - 1):
             break
-    print "correct_rate:", (correct + 0.0) / (batch_size * test_batch_num)
+    return (correct + 0.0) / (batch_size * test_batch_num)
 
 
 def adjust_learning_rate(optimizer, loss):
@@ -397,8 +409,8 @@ def adjust_learning_rate(optimizer, loss):
         pass
 
 
-if __name__ == '__main__':
-    step = 0
+if __name__ == '__main__1':
+    clip = 5
     net = CapsNet()
     net.cuda()
     print(net)
@@ -420,6 +432,8 @@ if __name__ == '__main__':
             output = net(data)
             loss, m_loss, r_loss = net.loss(output, target, data)
             loss.backward()
+            # 防止梯度爆炸
+            # torch.nn.utils.clip_grad_norm(net.parameters(), clip)
             optimizer.step()
             if batch_idx % 20 == 0 and batch_idx != 0:
                 # print "!!!out put:", output
@@ -427,4 +441,8 @@ if __name__ == '__main__':
                 # adjust_learning_rate(optimizer, loss.data[0])
             if batch_idx % 50 == 0 and batch_idx != 0 and loss.data[0] < 1.0:
                 print "test begin"
-                test(net)
+                correct_rate = test(net)
+                print "correct_rate:", correct_rate
+                # 保存网络
+                # if correct_rate > 0.98:
+                #    torch.save(net, 'caps-net.pkl')
