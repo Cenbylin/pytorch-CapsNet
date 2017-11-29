@@ -13,7 +13,7 @@ batch_size = 30
 
 data_transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 train_loader = torch.utils.data.DataLoader(datasets.MNIST('mnist', train=True, download=True, transform=data_transform),
                                            batch_size=batch_size, shuffle=True)
@@ -376,41 +376,8 @@ def test(model):
     return (correct + 0.0) / (batch_size * test_batch_num)
 
 
-def adjust_learning_rate(optimizer, loss):
-    '''
-    调整学习率
-    '''
-    global step
-    if step == 0:
-        if loss < 2:
-            step += 1
-            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = param_group['lr'] * 0.1
-    elif step == 1:
-        if loss < 1:
-            step += 1
-            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = param_group['lr'] * 0.1
-    elif step == 2:
-        if loss < 0.6:
-            step += 1
-            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.1, "】"
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = param_group['lr'] * 0.03
-    elif step == 3:
-        if loss < 0.3:
-            step += 1
-            print "【adjust rl to", optimizer.param_groups[0]['lr'] * 0.07, "】"
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = param_group['lr'] * 0.07
-    else:
-        pass
-
-
 if __name__ == '__main__1':
-    clip = 5
+    clip = 0.2
     net = CapsNet()
     net.cuda()
     print(net)
@@ -433,8 +400,9 @@ if __name__ == '__main__1':
             loss, m_loss, r_loss = net.loss(output, target, data)
             loss.backward()
             # 防止梯度爆炸
-            # torch.nn.utils.clip_grad_norm(net.parameters(), clip)
+            torch.nn.utils.clip_grad_norm(net.parameters(), clip)
             optimizer.step()
+
             if batch_idx % 20 == 0 and batch_idx != 0:
                 # print "!!!out put:", output
                 print "loss", loss.data[0], "r_loss", r_loss.data[0]
