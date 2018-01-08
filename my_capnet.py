@@ -50,7 +50,7 @@ class CapsNet(nn.Module):
         self.pre_net = nn.Sequential(conv1, relu1, primarycaps)
 
         # RouteCap层 (6x6x32个8D-capsule路由到10个16D-capsule)
-        self.routeCap1 = RouteCap(in_caps_num=6*6*32,
+        self.routeCap1 = RouteCap(in_caps_num=6 * 6 * 32,
                                   in_caps_dim=8,
                                   out_caps_num=256,
                                   out_caps_dim=8)
@@ -265,6 +265,18 @@ if __name__ == '__main__1':
     from torch.autograd import Variable
     import torch
     import torch.optim as optim
+    # 图片显示
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+
+    def grayshow(img):
+        img = img.squeeze()
+        img = img / 2 + 0.5  # unnormalize
+        npimg = img.numpy()
+        plt.imshow(npimg, cmap='gray')
+        plt.show()
+
 
     batch_size = 16
     data_transform = transforms.Compose([
@@ -281,7 +293,7 @@ if __name__ == '__main__1':
     net = CapsNet()
     net.cuda()
     print(net)
-    optimizer = optim.Adam(net.parameters(), lr=1e-3)
+    optimizer = optim.Adam(net.parameters(), lr=1e-4)
     scheduler = lr_scheduler.ExponentialLR(optimizer, 0.5)
     for epoch in range(30):
         # Update learning rate
@@ -298,5 +310,7 @@ if __name__ == '__main__1':
             loss.backward()
             optimizer.step()
             # adjust_learning_rate(optimizer, loss.data[0])
-            if batch_idx % 5 == 0:
+            if batch_idx % 16 == 0:
                 print("loss", loss.data[0])
+                if loss.data[0] < 0.07:
+                    grayshow(output[0].cpu().data)
